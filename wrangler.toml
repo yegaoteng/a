@@ -1,3 +1,7 @@
 name = "callback"
 main = "worker.js"
 compatibility_date = "2026-11-02"
+
+[vars]
+CLIENT_ID = "prism_4sTg_fyD9ujYacOPh1ZYNQ"
+PRISM_URL = "https://auth.ffurry.cc.cd"
