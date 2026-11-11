@@ -1,6 +1,6 @@
 export default {
   async fetch(request, env) {
-    // 1. 处理浏览器的 CORS 预检请求（非常重要，否则前端 POST 会报错）
+    // 1. 处理 CORS 预检请求
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -18,26 +18,36 @@ export default {
       try {
         const body = await request.json();
         
-        // 动态接收前端传来的 code 和 redirect_uri
         if (!body.code || !body.redirect_uri) {
-          return new Response(JSON.stringify({ error: "Missing code or redirect_uri" }), { status: 400 });
+          return new Response(JSON.stringify({ error: "Missing code or redirect_uri" }), { 
+            status: 400,
+            headers: { "Access-Control-Allow-Origin": request.headers.get("Origin") || "*", "Content-Type": "application/json" }
+          });
         }
 
-        // 请求 Prism 的 Token 端点
+        const params = new URLSearchParams({
+          grant_type: "authorization_code",
+          code: body.code,
+          redirect_uri: body.redirect_uri,
+          client_id: env.CLIENT_ID,
+          client_secret: env.CLIENT_SECRET, // 机密客户端必须带 Secret
+        });
+
+        // 【关键修复】如果前端传了 PKCE 验证码，一起带上
+        if (body.code_verifier) {
+          params.append("code_verifier", body.code_verifier);
+        }
+
+        // 请求 Prism 换取 Token
         const res = await fetch(`${env.PRISM_URL}/api/oauth/token`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "authorization_code",
-            code: body.code,
-            redirect_uri: body.redirect_uri, // 前端传过来的当前项目回调地址
-            client_id: env.CLIENT_ID,
-            client_secret: env.CLIENT_SECRET,
-          }),
+          body: params.toString(),
         });
 
-        // 将 Prism 的结果原样返回给前端，并附带 CORS 头
-        return new Response(await res.text(), {
+        const resData = await res.text();
+
+        return new Response(resData, {
           status: res.status,
           headers: {
             "Content-Type": "application/json",
@@ -47,7 +57,7 @@ export default {
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
           status: 500,
-          headers: { "Access-Control-Allow-Origin": request.headers.get("Origin") || "*" },
+          headers: { "Access-Control-Allow-Origin": request.headers.get("Origin") || "*", "Content-Type": "application/json" },
         });
       }
     }
