@@ -1,6 +1,5 @@
 export default {
   async fetch(request, env) {
-    // 1. 处理 CORS 预检请求
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -13,7 +12,6 @@ export default {
 
     const url = new URL(request.url);
     
-    // 2. 处理换取 Token 的请求
     if (request.method === "POST" && url.pathname === "/api/token") {
       try {
         const body = await request.json();
@@ -30,30 +28,57 @@ export default {
           code: body.code,
           redirect_uri: body.redirect_uri,
           client_id: env.CLIENT_ID,
-          client_secret: env.CLIENT_SECRET, // 机密客户端必须带 Secret
+          client_secret: env.CLIENT_SECRET,
         });
 
-        // 【关键修复】如果前端传了 PKCE 验证码，一起带上
         if (body.code_verifier) {
           params.append("code_verifier", body.code_verifier);
         }
 
-        // 请求 Prism 换取 Token
-        const res = await fetch(`${env.PRISM_URL}/api/oauth/token`, {
+        // 1. 换取 Token
+        const tokenRes = await fetch(`${env.PRISM_URL}/api/oauth/token`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: params.toString(),
         });
 
-        const resData = await res.text();
+        if (!tokenRes.ok) {
+          const errText = await tokenRes.text();
+          return new Response(errText, {
+            status: tokenRes.status,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": request.headers.get("Origin") || "*" },
+          });
+        }
 
-        return new Response(resData, {
-          status: res.status,
+        const tokens = await tokenRes.json();
+
+        // 2. 【新增步骤】Worker 替前端去拿 UserInfo
+        let userInfo = null;
+        try {
+          const userinfoRes = await fetch(`${env.PRISM_URL}/api/oauth/userinfo`, {
+            headers: { "Authorization": `Bearer ${tokens.access_token}` }
+          });
+          if (userinfoRes.ok) {
+            userInfo = await userinfoRes.json();
+          }
+        } catch (e) {
+          console.error("获取用户信息失败", e);
+        }
+
+        // 3. 把 Token 和 UserInfo 合并返回给前端
+        const finalData = {
+          ...tokens,
+          userInfo: userInfo
+        };
+
+        return new Response(JSON.stringify(finalData), {
+          status: 200,
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
           },
         });
+
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
           status: 500,
