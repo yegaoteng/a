@@ -16,10 +16,20 @@ export default {
       try {
         const body = await request.json();
         
-        if (!body.code || !body.redirect_uri) {
-          return new Response(JSON.stringify({ error: "Missing code or redirect_uri" }), { 
-            status: 400,
-            headers: { "Access-Control-Allow-Origin": request.headers.get("Origin") || "*", "Content-Type": "application/json" }
+        // 【关键修改】现在必须要有 client_id
+        if (!body.code || !body.redirect_uri || !body.client_id) {
+          return new Response(JSON.stringify({ error: "Missing code, redirect_uri, or client_id" }), { 
+            status: 400, headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" }
+          });
+        }
+
+        // 【关键修改】从 JSON 映射中动态获取 client_secret
+        const secretsMap = JSON.parse(env.CLIENT_SECRETS || "{}");
+        const clientSecret = secretsMap[body.client_id];
+
+        if (!clientSecret) {
+          return new Response(JSON.stringify({ error: "Unknown Client ID" }), { 
+            status: 400, headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" }
           });
         }
 
@@ -27,15 +37,14 @@ export default {
           grant_type: "authorization_code",
           code: body.code,
           redirect_uri: body.redirect_uri,
-          client_id: env.CLIENT_ID,
-          client_secret: env.CLIENT_SECRET,
+          client_id: body.client_id,
+          client_secret: clientSecret, // 使用动态匹配到的密钥
         });
 
         if (body.code_verifier) {
           params.append("code_verifier", body.code_verifier);
         }
 
-        // 1. 换取 Token
         const tokenRes = await fetch(`${env.PRISM_URL}/api/oauth/token`, {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -52,37 +61,25 @@ export default {
 
         const tokens = await tokenRes.json();
 
-        // 2. 【新增步骤】Worker 替前端去拿 UserInfo
         let userInfo = null;
         try {
           const userinfoRes = await fetch(`${env.PRISM_URL}/api/oauth/userinfo`, {
             headers: { "Authorization": `Bearer ${tokens.access_token}` }
           });
-          if (userinfoRes.ok) {
-            userInfo = await userinfoRes.json();
-          }
-        } catch (e) {
-          console.error("获取用户信息失败", e);
-        }
+          if (userinfoRes.ok) userInfo = await userinfoRes.json();
+        } catch (e) {}
 
-        // 3. 把 Token 和 UserInfo 合并返回给前端
-        const finalData = {
-          ...tokens,
-          userInfo: userInfo
-        };
+        const finalData = { ...tokens, userInfo: userInfo };
 
         return new Response(JSON.stringify(finalData), {
           status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": request.headers.get("Origin") || "*",
-          },
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": request.headers.get("Origin") || "*" },
         });
 
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
           status: 500,
-          headers: { "Access-Control-Allow-Origin": request.headers.get("Origin") || "*", "Content-Type": "application/json" },
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
         });
       }
     }
