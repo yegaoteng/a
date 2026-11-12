@@ -3,5 +3,5 @@ main = "worker.js"
 compatibility_date = "2026-11-02"
 
 [vars]
-CLIENT_ID = "prism_4sTg_fyD9ujYacOPh1ZYNQ"
+CLIENT_SECRETS = "{"prism_4sTg_fyD9ujYacOPh1ZYNQ":"jcHvzu081Y7o_NTabOFQX1P9m2drCejv6BZSqdCZPxE","prism_ohqnsFW29Ras9FaettvUfQ":"gEWYSygGXyqKpb_lrx4Kr_PKv8YPD0yul1De9d8cOV4"}"
 PRISM_URL = "https://auth.ffurry.cc.cd"
